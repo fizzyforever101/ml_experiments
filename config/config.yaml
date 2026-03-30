@@ -1,0 +1,30 @@
+data:
+  mimic_path: "data/processed/mimic.csv"
+  olives:
+    img_dir: "data/raw/olives/images"
+    labels_csv: "data/raw/olives/labels.csv"
+    label_col: "label"
+    id_col: "image"
+
+model:
+  tabular:
+    type: "gbdt"   # "gbdt" or "logreg"
+  image:
+    backbone: "resnet18"
+
+training:
+  batch_size: 32
+  lr: 0.001
+  epochs: 10
+  seed: 42
+
+fairness:
+  mimic_protected_attributes: ["race", "gender", "age_group"]
+  olives_protected_attributes: ["race", "ethnicity", "gender", "age_group"]
+  mimic_reweight_attribute: "race"
+  olives_reweight_attribute: "race"
+  olives_threshold_attribute: "race"
+  threshold: 0.5
+
+output:
+  dir: "results/"
