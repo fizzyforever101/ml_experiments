@@ -4,7 +4,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.data.mimic_loader import load_mimic
 from src.models.train_tabular import get_model
-from src.fairness.reweighting import compute_group_weights
+from src.fairness.reweighing import compute_group_weights
 from src.evaluation.subgroup import subgroup_analysis
 from src.evaluation.plots import plot_metric_comparison
 from src.utils.io import save_json

@@ -39,8 +39,8 @@ def create_age_groups(df):
     """
     df = df.copy()
 
-    bins = [0, 30, 50, 70, 100, 150]
-    labels = ["young", "middle", "senior", "elderly"]
+    bins = [0, 30, 50, 70, 90, 150]
+    labels = ["young", "middle", "senior", "elderly", "very_elderly"]
 
     df["age_group"] = pd.cut(df["age"], bins=bins, labels=labels)
 

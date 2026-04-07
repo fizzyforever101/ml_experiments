@@ -1,8 +1,11 @@
 import random
 import numpy as np
-import torch
 
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+    except ImportError:
+        pass  # torch not available

@@ -7,10 +7,33 @@ import numpy as np
 
 def _find_file(mimic_dir, filename):
     target = filename.lower()
-    for f in os.listdir(mimic_dir):
-        if f.lower() == target or f.lower() == f"{target}.gz":
-            return os.path.join(mimic_dir, f)
-    raise FileNotFoundError(f"Could not find {filename} in {mimic_dir}")
+    # First try the provided directory
+    if os.path.isdir(mimic_dir):
+        for f in os.listdir(mimic_dir):
+            if f.lower() == target or f.lower() == f"{target}.gz":
+                return os.path.join(mimic_dir, f)
+    
+    # If not found and mimic_dir contains hosp/ or icu/, search those subdirectories
+    # ICUSTAYS is in icu/, others are in hosp/
+    if filename.upper() == "ICUSTAYS.CSV":
+        icu_dir = os.path.join(mimic_dir, "icu")
+        if os.path.isdir(icu_dir):
+            for f in os.listdir(icu_dir):
+                if f.lower() == target or f.lower() == f"{target}.gz":
+                    return os.path.join(icu_dir, f)
+    
+    hosp_dir = os.path.join(mimic_dir, "hosp")
+    if os.path.isdir(hosp_dir):
+        for f in os.listdir(hosp_dir):
+            if f.lower() == target or f.lower() == f"{target}.gz":
+                return os.path.join(hosp_dir, f)
+    
+    raise FileNotFoundError(f"Could not find {filename} in {mimic_dir} or its hosp/icu subdirectories")
+
+def _normalize_columns(df):
+    """Normalize column names to lowercase."""
+    df.columns = [col.lower() for col in df.columns]
+    return df
 
 def _map_ethnicity_to_race(eth):
     if pd.isna(eth):
@@ -141,29 +164,18 @@ def build_mimic_csv(
     hours=24,
     chunksize=500_000
 ):
-    admissions = pd.read_csv(
-        _find_file(mimic_dir, "ADMISSIONS.csv"),
-        usecols=[
-            "SUBJECT_ID", "HADM_ID", "ADMITTIME", "DISCHTIME",
-            "ADMISSION_TYPE", "INSURANCE", "MARITAL_STATUS",
-            "ETHNICITY", "HOSPITAL_EXPIRE_FLAG"
-        ]
-    )
-    patients = pd.read_csv(
-        _find_file(mimic_dir, "PATIENTS.csv"),
-        usecols=["SUBJECT_ID", "GENDER", "DOB"]
-    )
-    icustays = pd.read_csv(
-        _find_file(mimic_dir, "ICUSTAYS.csv"),
-        usecols=["SUBJECT_ID", "HADM_ID", "ICUSTAY_ID", "INTIME", "OUTTIME", "FIRST_CAREUNIT"]
-    )
-
-    for df in [admissions, patients, icustays]:
-        df.columns = [c.lower() for c in df.columns]
+    # Load and normalize column names for both MIMIC-III (uppercase) and MIMIC-IV (lowercase)
+    admissions = _normalize_columns(pd.read_csv(_find_file(mimic_dir, "ADMISSIONS.csv")))
+    patients = _normalize_columns(pd.read_csv(_find_file(mimic_dir, "PATIENTS.csv")))
+    icustays = _normalize_columns(pd.read_csv(_find_file(mimic_dir, "ICUSTAYS.csv")))
 
     admissions["admittime"] = pd.to_datetime(admissions["admittime"])
     admissions["dischtime"] = pd.to_datetime(admissions["dischtime"])
-    patients["dob"] = pd.to_datetime(patients["dob"])
+    
+    # Handle both MIMIC-III (with DOB) and MIMIC-IV (with anchor_age)
+    if "dob" in patients.columns:
+        patients["dob"] = pd.to_datetime(patients["dob"])
+    
     icustays["intime"] = pd.to_datetime(icustays["intime"])
     icustays["outtime"] = pd.to_datetime(icustays["outtime"])
 
@@ -178,7 +190,16 @@ def build_mimic_csv(
         merged = merged.merge(icustays, on=["subject_id", "hadm_id"], how="inner")
 
     # Age at admission (cap de-identified ages > 89)
-    age = (merged["admittime"] - merged["dob"]).dt.days / 365.25
+    if "dob" in merged.columns:
+        # MIMIC-III style: calculate from DOB
+        age = (merged["admittime"] - merged["dob"]).dt.days / 365.25
+    elif "anchor_age" in merged.columns:
+        # MIMIC-IV style: use anchor_age directly
+        # Note: This is age at anchor_year; for simplicity, use it as age at admission
+        age = merged["anchor_age"]
+    else:
+        raise ValueError("Cannot determine age: neither 'dob' nor 'anchor_age' found")
+    
     merged["age"] = age.clip(lower=0)
     merged.loc[merged["age"] > 89, "age"] = 90
 
@@ -186,8 +207,34 @@ def build_mimic_csv(
     merged["los_hosp_days"] = (merged["dischtime"] - merged["admittime"]).dt.total_seconds() / 86400.0
     merged["los_icu_days"] = (merged["outtime"] - merged["intime"]).dt.total_seconds() / 86400.0
 
-    # Protected attribute: race (mapped from ethnicity)
-    merged["race"] = merged["ethnicity"].apply(_map_ethnicity_to_race)
+    # Protected attribute: race (already present in MIMIC-IV, or mapped from ethnicity in MIMIC-III)
+    if "race" not in merged.columns and "ethnicity" in merged.columns:
+        merged["race"] = merged["ethnicity"].apply(_map_ethnicity_to_race)
+    elif "race" not in merged.columns:
+        raise ValueError("Neither 'race' nor 'ethnicity' columns found")
+    
+    # Normalize race values to simple categories for MIMIC-IV data
+    def _normalize_race(race_val):
+        if pd.isna(race_val):
+            return "unknown"
+        race_val = str(race_val).lower()
+        if "white" in race_val:
+            return "white"
+        if "black" in race_val or "african" in race_val or "cape verdean" in race_val:
+            return "black"
+        if "hispanic" in race_val or "latino" in race_val:
+            return "hispanic"
+        if "asian" in race_val:
+            return "asian"
+        if "native" in race_val or "alaska" in race_val or "american indian" in race_val:
+            return "native"
+        if "middle east" in race_val:
+            return "middle_eastern"
+        if "portuguese" in race_val:
+            return "other"
+        return "other"
+    
+    merged["race"] = merged["race"].apply(_normalize_race)
     merged["gender"] = merged["gender"].str.lower()
 
     # Label
