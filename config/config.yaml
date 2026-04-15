@@ -1,10 +1,11 @@
 data:
   mimic_path: "data/processed/mimic.csv"
   olives:
-    img_dir: "data/raw/olives/images"
-    labels_csv: "data/raw/olives/labels.csv"
-    label_col: "label"
-    id_col: "image"
+    img_dir: "/home/hice1/rbrock31/scratch/OLIVES/Prime_FULL"
+    labels_csv: "/home/hice1/rbrock31/scratch/OLIVES/ml_centric_labels/Biomarker_Clinical_Data_Images.csv"
+    demographics_csv: "/home/hice1/rbrock31/scratch/OLIVES/labels/OCT-DR-demo.csv"
+    label_col: "DRT/ME"   # Desired label
+    path_col: "Path (Trial/Arm/Folder/Visit/Eye/Image Name)"
 
 model:
   tabular:
@@ -15,12 +16,12 @@ model:
 training:
   batch_size: 32
   lr: 0.001
-  epochs: 10
+  epochs: 1000
   seed: 42
 
 fairness:
   mimic_protected_attributes: ["race", "gender", "age_group"]
-  olives_protected_attributes: ["race", "ethnicity", "gender", "age_group"]
+  olives_protected_attributes: ["race", "ethnicity", "gender", "age"]
   mimic_reweight_attribute: "race"
   olives_reweight_attribute: "race"
   olives_threshold_attribute: "race"

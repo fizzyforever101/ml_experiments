@@ -5,6 +5,7 @@ import torchvision.transforms as T
 import yaml
 from sklearn.model_selection import train_test_split
 import pandas as pd
+import numpy as np
 
 from src.data.olives_loader import OlivesDataset
 from src.models.train_image import get_model
@@ -24,9 +25,10 @@ transform = T.Compose([
 dataset = OlivesDataset(
     config["data"]["olives"]["img_dir"],
     config["data"]["olives"]["labels_csv"],
+    config["data"]["olives"]["demographics_csv"],
     transform=transform,
-    label_col=config["data"]["olives"]["label_col"],
-    id_col=config["data"]["olives"]["id_col"]
+    label_col="DRT/ME",
+    path_col="Path (Trial/Arm/Folder/Visit/Eye/Image Name)",
 )
 
 labels = dataset.df[config["data"]["olives"]["label_col"]].values
@@ -45,6 +47,7 @@ train_loader = DataLoader(
         default_collate([b[0] for b in batch]),
         default_collate([b[1] for b in batch]),
         [b[2] for b in batch],
+        [b[3] for b in batch],
     )
 )
 test_loader = DataLoader(
@@ -55,6 +58,7 @@ test_loader = DataLoader(
         default_collate([b[0] for b in batch]),
         default_collate([b[1] for b in batch]),
         [b[2] for b in batch],
+        [b[3] for b in batch],
     )
 )
 
@@ -63,9 +67,31 @@ model = get_model().to(device)
 criterion = torch.nn.BCEWithLogitsLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=config["training"]["lr"])
 
-model.train()
+# img, label, path, demo = dataset[0]
+# print(type(img), img.shape)   # feature (image tensor)
+# print(type(label), label)     # label
+# print(type(demo), demo)       # demographic data
+
+print(f"Total dataset size: {len(dataset)}")
+print(f"Training set size: {len(train_idx)}")
+print(f"Test set size: {len(test_idx)}")
+
+train_labels = labels[train_idx]
+test_labels = labels[test_idx]
+
+print("Train class counts:")
+unique, counts = np.unique(train_labels, return_counts=True)
+print(dict(zip(unique, counts)))
+
+print("Test class counts:")
+unique, counts = np.unique(test_labels, return_counts=True)
+print(dict(zip(unique, counts)))
+
 for epoch in range(config["training"]["epochs"]):
-    for imgs, labels, meta in train_loader:
+    model.train()
+    epoch_loss = 0.0
+
+    for imgs, labels, paths, meta in train_loader:
         imgs = imgs.to(device)
         labels = labels.float().to(device)
 
@@ -76,19 +102,23 @@ for epoch in range(config["training"]["epochs"]):
         loss.backward()
         optimizer.step()
 
-    print(f"Epoch {epoch} loss: {loss.item()}")
+        epoch_loss += loss.item()
 
+    epoch_loss /= len(train_loader)
+    print(f"Epoch {epoch} loss: {epoch_loss:.6f}")
+
+torch.save(model.state_dict(), "olives_model.pth")
 model.eval()
 y_true, y_prob, meta_rows = [], [], []
 with torch.no_grad():
-    for imgs, labels, meta in test_loader:
+    for imgs, labels, paths, meta in test_loader:
         imgs = imgs.to(device)
         outputs = model(imgs).squeeze()
         probs = torch.sigmoid(outputs).cpu().numpy()
 
         y_true.extend(labels.numpy())
         y_prob.extend(probs)
-        meta_rows.extend([m.to_dict() for m in meta])
+        meta_rows.extend(meta)
 
 meta_df = pd.DataFrame(meta_rows)
 metrics = {}
