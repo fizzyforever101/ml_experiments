@@ -26,7 +26,7 @@ fairness:
   mimic_reweight_attribute: "race"
   olives_reweight_attribute: "race"
   olives_threshold_attribute: "race"
-  threshold: 0.5
+  threshold: 0.05
 
 output:
   dir: "results/"
