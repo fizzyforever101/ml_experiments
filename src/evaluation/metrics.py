@@ -33,6 +33,8 @@ def compute_metrics(y_true, y_pred, y_prob):
         "AUROC": auroc,
         "AUPRC": auprc,
         "ECE": expected_calibration_error(y_true, y_prob),
-        "FNR": fn / (fn + tp) if (fn + tp) > 0 else 0,
-        "FPR": fp / (fp + tn) if (fp + tn) > 0 else 0
+        "FNR": fn / (fn + tp) if (fn + tp) > 0 else 0.0,
+        "FPR": fp / (fp + tn) if (fp + tn) > 0 else 0.0,
+        "TPR" : tp / (tp + fn) if (tp + fn) > 0 else 0.0,
+        "TNR" : tn / (tn + fp) if (tn + fp) > 0 else 0.0
     }

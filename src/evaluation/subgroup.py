@@ -32,8 +32,14 @@ def subgroup_analysis_from_probs(y_true, y_prob, protected, group_col, threshold
     for group in protected[group_col].unique():
         idx = protected[group_col] == group
         y_g = y_true[idx]
+
+        if len(np.unique(y_g)) < 2:
+            results[str(group)] = {"error": "only one class present"}
+            continue
+
         y_prob_g = y_prob[idx]
         y_pred_g = (y_prob_g > threshold).astype(int)
-        results[group] = compute_metrics(y_g, y_pred_g, y_prob_g)
+
+        results[str(group)] = compute_metrics(y_g, y_pred_g, y_prob_g)
 
     return results
