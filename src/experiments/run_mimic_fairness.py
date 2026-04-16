@@ -21,9 +21,20 @@ X, y, protected = load_mimic(
     protected_attrs
 )
 
+max_rows = config.get("training", {}).get("mimic_max_rows")
+if max_rows and len(y) > max_rows:
+    original_rows = len(y)
+    sampled_idx = y.sample(n=max_rows, random_state=config["training"]["seed"]).index
+    X = X.loc[sampled_idx]
+    y = y.loc[sampled_idx]
+    protected = protected.loc[sampled_idx]
+    print(f"Using sampled MIMIC rows: {len(y)} (from {original_rows})")
+
 X_train, X_test, y_train, y_test, p_train, p_test = train_test_split(
     X, y, protected, test_size=0.2, stratify=y
 )
+
+threshold = config["fairness"].get("threshold", 0.5)
 
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
@@ -32,13 +43,13 @@ X_test = scaler.transform(X_test)
 baseline_model = get_model(config["model"]["tabular"]["type"])
 baseline_model.fit(X_train, y_train)
 
-baseline = subgroup_analysis(baseline_model, X_test, y_test, p_test, reweight_attr)
+baseline = subgroup_analysis(baseline_model, X_test, y_test, p_test, reweight_attr, threshold=threshold)
 
 weights = compute_group_weights(p_train, reweight_attr)
 reweighted_model = get_model(config["model"]["tabular"]["type"])
 reweighted_model.fit(X_train, y_train, sample_weight=weights)
 
-after = subgroup_analysis(reweighted_model, X_test, y_test, p_test, reweight_attr)
+after = subgroup_analysis(reweighted_model, X_test, y_test, p_test, reweight_attr, threshold=threshold)
 
 plot_metric_comparison(
     baseline,

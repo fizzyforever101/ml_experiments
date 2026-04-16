@@ -30,6 +30,12 @@ def _find_file(mimic_dir, filename):
     
     raise FileNotFoundError(f"Could not find {filename} in {mimic_dir} or its hosp/icu subdirectories")
 
+def _try_find_file(mimic_dir, filename):
+    try:
+        return _find_file(mimic_dir, filename)
+    except FileNotFoundError:
+        return None
+
 def _normalize_columns(df):
     """Normalize column names to lowercase."""
     df.columns = [col.lower() for col in df.columns]
@@ -167,7 +173,14 @@ def build_mimic_csv(
     # Load and normalize column names for both MIMIC-III (uppercase) and MIMIC-IV (lowercase)
     admissions = _normalize_columns(pd.read_csv(_find_file(mimic_dir, "ADMISSIONS.csv")))
     patients = _normalize_columns(pd.read_csv(_find_file(mimic_dir, "PATIENTS.csv")))
-    icustays = _normalize_columns(pd.read_csv(_find_file(mimic_dir, "ICUSTAYS.csv")))
+
+    icustays_path = _try_find_file(mimic_dir, "ICUSTAYS.csv")
+    has_icu = icustays_path is not None
+    icustays = None
+    if has_icu:
+        icustays = _normalize_columns(pd.read_csv(icustays_path))
+    else:
+        print("ICUSTAYS not found. Building hospital-level cohort without ICU features.")
 
     admissions["admittime"] = pd.to_datetime(admissions["admittime"])
     admissions["dischtime"] = pd.to_datetime(admissions["dischtime"])
@@ -176,18 +189,20 @@ def build_mimic_csv(
     if "dob" in patients.columns:
         patients["dob"] = pd.to_datetime(patients["dob"])
     
-    icustays["intime"] = pd.to_datetime(icustays["intime"])
-    icustays["outtime"] = pd.to_datetime(icustays["outtime"])
+    if has_icu:
+        icustays["intime"] = pd.to_datetime(icustays["intime"])
+        icustays["outtime"] = pd.to_datetime(icustays["outtime"])
 
-    # First ICU stay per admission
-    icustays = icustays.sort_values("intime").drop_duplicates(subset=["hadm_id"])
+        # First ICU stay per admission
+        icustays = icustays.sort_values("intime").drop_duplicates(subset=["hadm_id"])
 
     # Merge admissions + patients
     merged = admissions.merge(patients, on="subject_id", how="left")
-    if include_non_icu:
-        merged = merged.merge(icustays, on=["subject_id", "hadm_id"], how="left")
-    else:
-        merged = merged.merge(icustays, on=["subject_id", "hadm_id"], how="inner")
+    if has_icu:
+        if include_non_icu:
+            merged = merged.merge(icustays, on=["subject_id", "hadm_id"], how="left")
+        else:
+            merged = merged.merge(icustays, on=["subject_id", "hadm_id"], how="inner")
 
     # Age at admission (cap de-identified ages > 89)
     if "dob" in merged.columns:
@@ -205,7 +220,15 @@ def build_mimic_csv(
 
     # LOS features
     merged["los_hosp_days"] = (merged["dischtime"] - merged["admittime"]).dt.total_seconds() / 86400.0
-    merged["los_icu_days"] = (merged["outtime"] - merged["intime"]).dt.total_seconds() / 86400.0
+    if has_icu:
+        merged["los_icu_days"] = (merged["outtime"] - merged["intime"]).dt.total_seconds() / 86400.0
+    else:
+        merged["los_icu_days"] = 0.0
+        merged["first_careunit"] = "non_icu"
+
+    if "first_careunit" not in merged.columns:
+        merged["first_careunit"] = "unknown"
+    merged["first_careunit"] = merged["first_careunit"].fillna("non_icu")
 
     # Protected attribute: race (already present in MIMIC-IV, or mapped from ethnicity in MIMIC-III)
     if "race" not in merged.columns and "ethnicity" in merged.columns:
@@ -258,7 +281,9 @@ def build_mimic_csv(
     df_out = df_out.replace([np.inf, -np.inf], np.nan).dropna(subset=["mortality", "age", "gender", "race"])
 
     # Optional: aggregate first-24h vitals/labs if item map is provided
-    if item_map_path:
+    if item_map_path and not has_icu:
+        print("Skipping item_map features: ICU tables are not available.")
+    elif item_map_path:
         item_map = _load_item_map(item_map_path)
         icu_stays = merged.dropna(subset=["icustay_id"])[["hadm_id", "icustay_id", "intime"]]
         chartevents_path = chartevents_path or _find_file(mimic_dir, "CHARTEVENTS.csv")
@@ -325,7 +350,7 @@ def build_mimic_csv(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mimic_dir", required=True, help="Path to raw MIMIC-III CSV folder")
+    parser.add_argument("--mimic_dir", required=True, help="Path to raw MIMIC CSV folder (MIMIC-III or MIMIC-IV)")
     parser.add_argument("--output", default="data/processed/mimic.csv", help="Output CSV path")
     parser.add_argument("--include_non_icu", action="store_true", help="Keep admissions without ICU stays")
     parser.add_argument("--item_map", default=None, help="CSV mapping: source,itemid,name")

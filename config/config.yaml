@@ -9,7 +9,7 @@ data:
 
 model:
   tabular:
-    type: "gbdt"   # "gbdt" or "logreg"
+    type: "logreg"   # "gbdt" or "logreg"
   image:
     backbone: "resnet18"
 
@@ -18,6 +18,7 @@ training:
   lr: 0.001
   epochs: 1000
   seed: 42
+  mimic_max_rows: 120000
 
 fairness:
   mimic_protected_attributes: ["race", "gender", "age_group"]
