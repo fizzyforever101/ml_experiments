@@ -13,8 +13,11 @@ This project evaluates bias in clinical AI systems using:
 
 ## Run
 
-pip install -r requirements.txt  
-bash scripts/run_all.sh
+`pip install -r requirements.txt`  
+`bash scripts/run_all.sh`
+
+To run specific test cases of the OLIVES OCT experiments, run them as: 
+`python -m src.experiments.run_olives_baseline.py`
 
 ## Config
 Edit `config/config.yaml` to set dataset paths and protected attributes:
