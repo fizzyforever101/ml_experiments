@@ -16,13 +16,13 @@ model:
 training:
   batch_size: 32
   lr: 0.001
-  epochs: 1000
+  epochs: 25
   seed: 42
   mimic_max_rows: 120000
 
 fairness:
   mimic_protected_attributes: ["race", "gender", "age_group"]
-  olives_protected_attributes: ["race", "ethnicity", "gender", "age"]
+  olives_protected_attributes: ["race", "ethnicity", "gender"]
   mimic_reweight_attribute: "race"
   olives_reweight_attribute: "race"
   olives_threshold_attribute: "race"
